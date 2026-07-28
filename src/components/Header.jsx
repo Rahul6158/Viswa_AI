@@ -1,5 +1,6 @@
 import React from 'react';
 import { Heart, Sliders, MessageSquareText, Moon, Sun, Monitor, Eye } from 'lucide-react';
+import logoImg from '../assets/logo.png';
 
 export function Header({
   theme,
@@ -14,7 +15,7 @@ export function Header({
     <header className="app-header">
       <div className="brand-section">
         <img
-          src="/logo.png"
+          src={logoImg}
           alt="Viswa AI Logo"
           style={{
             width: '32px',
