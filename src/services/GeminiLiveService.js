@@ -191,7 +191,7 @@ class GeminiLiveService {
    * @param {string} options.personaInstruction
    * @param {string} options.voiceName
    */
-  async connect({ authMode = 'hosted', userApiKey = '', personaInstruction, voiceName = 'Puck' }) {
+  async connect({ authMode = 'hosted', userApiKey = '', personaInstruction, voiceName = 'Aoede' }) {
     if (this.isOffline) {
       const err = new GeminiError(ERROR_CODES.NETWORK_OFFLINE, 'Cannot connect while offline.');
       this.transitionState(CONNECTION_STATES.ERROR, err);
@@ -334,12 +334,12 @@ class GeminiLiveService {
             speechConfig: {
               voiceConfig: {
                 prebuiltVoiceConfig: {
-                  voiceName: voiceName || 'Puck'
+                  voiceName: voiceName || 'Aoede'
                 }
               }
             },
             systemInstruction: {
-              parts: [{ text: personaInstruction || 'You are a helpful AI Live Voice Assistant.' }]
+              parts: [{ text: personaInstruction || 'Your name is Viswa. You are a warm, genuine, empathetic, and supportive best friend. Speak ONLY your direct spoken words to the user. Never output internal planning notes, meta-commentary, persona explanations, or third-person notes about the user.' }]
             }
           },
           callbacks: {
@@ -430,7 +430,6 @@ class GeminiLiveService {
     try {
       metrics.recordBytesUploaded(base64Audio.length);
 
-      // Support SDK sendRealtimeInput signature (audio object & mediaChunks fallback)
       if (typeof this.liveSession.sendRealtimeInput === 'function') {
         try {
           this.liveSession.sendRealtimeInput({
@@ -467,7 +466,7 @@ class GeminiLiveService {
   }
 
   /**
-   * Sends camera frame JPEG to Live session
+   * Sends camera frame JPEG to Live session for multimodal vision processing
    * @param {string} base64Image 
    */
   sendVideoFrame(base64Image) {
@@ -475,19 +474,37 @@ class GeminiLiveService {
 
     try {
       metrics.recordBytesUploaded(base64Image.length);
-      const payload = {
-        mediaChunks: [
-          {
-            mimeType: 'image/jpeg',
-            data: base64Image
-          }
-        ]
-      };
+      logger.info(`Streaming camera JPEG frame (${base64Image.length} bytes base64) to Gemini vision pipeline...`);
 
       if (typeof this.liveSession.sendRealtimeInput === 'function') {
-        this.liveSession.sendRealtimeInput(payload);
+        try {
+          this.liveSession.sendRealtimeInput({
+            media: {
+              data: base64Image,
+              mimeType: 'image/jpeg'
+            }
+          });
+        } catch (e1) {
+          this.liveSession.sendRealtimeInput({
+            mediaChunks: [
+              {
+                mimeType: 'image/jpeg',
+                data: base64Image
+              }
+            ]
+          });
+        }
       } else if (typeof this.liveSession.send === 'function') {
-        this.liveSession.send({ realtimeInput: payload });
+        this.liveSession.send({
+          realtimeInput: {
+            mediaChunks: [
+              {
+                mimeType: 'image/jpeg',
+                data: base64Image
+              }
+            ]
+          }
+        });
       }
       this.emit('cameraFrameProcessed');
     } catch (err) {

@@ -1,17 +1,18 @@
 import React from 'react';
 import { X, Copy, Download, Trash2, User, Bot } from 'lucide-react';
+import { formatTranscriptText } from '../utils/storage';
 
 export function TranscriptDrawer({ isOpen, onClose, transcripts, onClear }) {
   // Export as TXT
   const handleExportTXT = () => {
     const textContent = transcripts
-      .map(t => `[${new Date(t.timestamp).toLocaleTimeString()}] ${t.speaker.toUpperCase()}: ${t.text}`)
+      .map(t => `[${new Date(t.timestamp).toLocaleTimeString()}] ${t.speaker.toUpperCase()}: ${formatTranscriptText(t.text)}`)
       .join('\n\n');
     const blob = new Blob([textContent], { type: 'text/plain;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `gemini-transcript-${Date.now()}.txt`;
+    a.download = `viswa-ai-transcript-${Date.now()}.txt`;
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -22,13 +23,13 @@ export function TranscriptDrawer({ isOpen, onClose, transcripts, onClear }) {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `gemini-transcript-${Date.now()}.json`;
+    a.download = `viswa-ai-transcript-${Date.now()}.json`;
     a.click();
     URL.revokeObjectURL(url);
   };
 
   const handleCopyAll = () => {
-    const fullText = transcripts.map(t => `${t.speaker}: ${t.text}`).join('\n');
+    const fullText = transcripts.map(t => `${t.speaker}: ${formatTranscriptText(t.text)}`).join('\n');
     navigator.clipboard.writeText(fullText);
   };
 
@@ -66,11 +67,11 @@ export function TranscriptDrawer({ isOpen, onClose, transcripts, onClear }) {
               <div className="bubble-meta">
                 <span style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontWeight: 600 }}>
                   {t.speaker === 'user' ? <User size={14} /> : <Bot size={14} />}
-                  {t.speaker === 'user' ? 'You' : 'Gemini'}
+                  {t.speaker === 'user' ? 'You' : 'AI Friend'}
                 </span>
                 <span>{new Date(t.timestamp).toLocaleTimeString()}</span>
               </div>
-              <p>{t.text}</p>
+              <p>{formatTranscriptText(t.text)}</p>
             </div>
           ))
         )}

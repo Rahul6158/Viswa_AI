@@ -1,9 +1,7 @@
 import React from 'react';
-import { Mic, Sparkles, Sliders, MessageSquareText, Moon, Sun, Monitor, Eye } from 'lucide-react';
-import { PERSONAS } from '../utils/storage';
+import { Mic, Heart, Sliders, MessageSquareText, Moon, Sun, Monitor, Eye } from 'lucide-react';
 
 export function Header({
-  personaId,
   theme,
   ambientMode,
   drawerOpen,
@@ -12,20 +10,18 @@ export function Header({
   onToggleTheme,
   onToggleAmbient
 }) {
-  const currentPersona = PERSONAS.find(p => p.id === personaId) || PERSONAS[0];
-
   return (
     <header className="app-header">
       <div className="brand-section">
         <div className="brand-icon">
-          <Mic size={20} />
+          <Mic size={18} />
         </div>
         <div>
-          <h1 className="brand-title">Gemini Live</h1>
+          <h1 className="brand-title">Viswa AI</h1>
         </div>
         <span className="badge-tag">
-          <Sparkles size={12} style={{ display: 'inline', marginRight: '4px' }} />
-          {currentPersona.name}
+          <Heart size={12} color="#ec4899" style={{ display: 'inline', marginRight: '4px' }} />
+          Best Friend Mode
         </span>
       </div>
 
@@ -35,7 +31,7 @@ export function Header({
           onClick={onToggleAmbient}
           title="Toggle Ambient Focus Mode"
         >
-          <Eye size={18} />
+          <Eye size={16} />
         </button>
 
         <button
@@ -43,15 +39,15 @@ export function Header({
           onClick={onToggleTheme}
           title={`Current Theme: ${theme}`}
         >
-          {theme === 'light' ? <Sun size={18} /> : theme === 'oled' ? <Monitor size={18} /> : <Moon size={18} />}
+          {theme === 'light' ? <Sun size={16} /> : theme === 'oled' ? <Monitor size={16} /> : <Moon size={16} />}
         </button>
 
         <button
           className={`icon-btn ${drawerOpen ? 'active' : ''}`}
           onClick={onToggleDrawer}
-          title="Toggle Transcript Drawer (Ctrl+L)"
+          title="Toggle Transcript Drawer (Ctrl+E)"
         >
-          <MessageSquareText size={18} />
+          <MessageSquareText size={16} />
         </button>
 
         <button
@@ -59,7 +55,7 @@ export function Header({
           onClick={onOpenSettings}
           title="Open Settings"
         >
-          <Sliders size={18} />
+          <Sliders size={16} />
         </button>
       </div>
     </header>

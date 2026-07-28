@@ -1,17 +1,14 @@
 import React from 'react';
-import { Mic, MicOff, PhoneCall, PhoneOff, Video, VideoOff, Users, Settings } from 'lucide-react';
-import { PERSONAS } from '../utils/storage';
+import { Mic, MicOff, PhoneCall, PhoneOff, Video, VideoOff, Settings } from 'lucide-react';
 
 export function ControlDock({
   agentState,
   isMuted,
   cameraActive,
-  selectedPersona,
   onConnect,
   onDisconnect,
   onToggleMute,
   onToggleCamera,
-  onSelectPersona,
   onOpenSettings
 }) {
   const isConnected = agentState !== 'idle' && agentState !== 'error';
@@ -46,30 +43,6 @@ export function ControlDock({
         >
           {cameraActive ? <Video size={20} /> : <VideoOff size={20} />}
         </button>
-
-        {/* Persona Select Dropdown */}
-        <div style={{ position: 'relative' }}>
-          <select
-            value={selectedPersona}
-            onChange={(e) => onSelectPersona(e.target.value)}
-            disabled={isConnected}
-            style={{
-              position: 'absolute',
-              inset: 0,
-              opacity: 0,
-              cursor: isConnected ? 'not-allowed' : 'pointer',
-              width: '100%',
-              height: '100%'
-            }}
-          >
-            {PERSONAS.map(p => (
-              <option key={p.id} value={p.id}>{p.name}</option>
-            ))}
-          </select>
-          <button className="dock-btn" title="Select Voice Persona">
-            <Users size={20} />
-          </button>
-        </div>
 
         {/* Settings Button */}
         <button className="dock-btn" onClick={onOpenSettings} title="Open Settings">

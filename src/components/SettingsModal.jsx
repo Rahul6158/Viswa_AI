@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { X, ShieldCheck, Key, Eye, EyeOff } from 'lucide-react';
-import { PERSONAS, VOICES } from '../utils/storage';
+import { VOICES } from '../utils/storage';
 
 export function SettingsModal({ isOpen, onClose, settings, onUpdateSettings, audioDevices }) {
   const [showKey, setShowKey] = useState(false);
@@ -11,9 +11,9 @@ export function SettingsModal({ isOpen, onClose, settings, onUpdateSettings, aud
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal-content" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
-          <h2 style={{ fontSize: '1.2rem', fontWeight: 700 }}>Agent Settings</h2>
+          <h2 style={{ fontSize: '1.1rem', fontWeight: 700 }}>Agent Settings</h2>
           <button className="icon-btn" onClick={onClose}>
-            <X size={18} />
+            <X size={16} />
           </button>
         </div>
 
@@ -34,13 +34,13 @@ export function SettingsModal({ isOpen, onClose, settings, onUpdateSettings, aud
           {/* BYOK API Key Input */}
           {settings.authMode === 'byok' ? (
             <div className="setting-group" style={{
-              padding: '0.85rem',
-              borderRadius: 'var(--radius-md)',
+              padding: '0.75rem',
+              borderRadius: 'var(--radius-sm)',
               background: 'rgba(56, 189, 248, 0.08)',
               border: '1px solid rgba(56, 189, 248, 0.25)'
             }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem', fontWeight: 600, fontSize: '0.85rem', color: '#38bdf8' }}>
-                <Key size={16} />
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.4rem', fontWeight: 600, fontSize: '0.8rem', color: '#38bdf8' }}>
+                <Key size={14} />
                 <span>Your Gemini API Key (Stored in LocalStorage)</span>
               </div>
               <div style={{ position: 'relative' }}>
@@ -66,48 +66,34 @@ export function SettingsModal({ isOpen, onClose, settings, onUpdateSettings, aud
                     cursor: 'pointer'
                   }}
                 >
-                  {showKey ? <EyeOff size={16} /> : <Eye size={16} />}
+                  {showKey ? <EyeOff size={15} /> : <Eye size={15} />}
                 </button>
               </div>
-              <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '0.35rem' }}>
+              <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', marginTop: '0.3rem' }}>
                 Your key is stored locally in your browser and sent only to Google's official Gemini API.
               </div>
             </div>
           ) : (
             <div style={{
-              padding: '0.85rem',
-              borderRadius: 'var(--radius-md)',
+              padding: '0.75rem',
+              borderRadius: 'var(--radius-sm)',
               background: 'rgba(16, 185, 129, 0.08)',
               border: '1px solid rgba(16, 185, 129, 0.2)',
               display: 'flex',
               alignItems: 'center',
-              gap: '0.75rem'
+              gap: '0.65rem'
             }}>
-              <ShieldCheck size={20} color="#10b981" />
+              <ShieldCheck size={18} color="#10b981" />
               <div>
-                <div style={{ fontWeight: 600, fontSize: '0.85rem', color: '#10b981' }}>
+                <div style={{ fontWeight: 600, fontSize: '0.8rem', color: '#10b981' }}>
                   Serverless Auth Proxy Active
                 </div>
-                <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+                <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>
                   Backend manages credentials via `/api/gemini`. Zero keys in browser JS.
                 </div>
               </div>
             </div>
           )}
-
-          {/* Voice Persona */}
-          <div className="setting-group">
-            <label className="setting-label">AI Persona</label>
-            <select
-              className="setting-select"
-              value={settings.persona}
-              onChange={(e) => onUpdateSettings({ persona: e.target.value })}
-            >
-              {PERSONAS.map(p => (
-                <option key={p.id} value={p.id}>{p.name} - {p.description}</option>
-              ))}
-            </select>
-          </div>
 
           {/* Gemini Voice Selection */}
           <div className="setting-group">
@@ -156,7 +142,7 @@ export function SettingsModal({ isOpen, onClose, settings, onUpdateSettings, aud
           <div className="setting-group">
             <div style={{ display: 'flex', justifyContent: 'space-between' }}>
               <label className="setting-label">Playback Volume</label>
-              <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>{Math.round(settings.playbackVolume * 100)}%</span>
+              <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{Math.round(settings.playbackVolume * 100)}%</span>
             </div>
             <input
               type="range"
@@ -172,7 +158,7 @@ export function SettingsModal({ isOpen, onClose, settings, onUpdateSettings, aud
           <div className="setting-group">
             <div style={{ display: 'flex', justifyContent: 'space-between' }}>
               <label className="setting-label">AI Voice Speed</label>
-              <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>{settings.playbackSpeed}x</span>
+              <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{settings.playbackSpeed}x</span>
             </div>
             <input
               type="range"

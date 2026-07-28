@@ -5,12 +5,27 @@ import { logger } from '../utils/logger';
 
 const WORKLET_CODE = `
 class PCMProcessor extends AudioWorkletProcessor {
+  constructor() {
+    super();
+    // Accumulate ~85ms of audio samples (4096 samples at 48kHz) before posting
+    // Reduces WebSocket frame rate from 375 msg/sec to ~11 msg/sec for low latency
+    this.bufferSize = 4096;
+    this.buffer = new Float32Array(this.bufferSize);
+    this.bufferIndex = 0;
+  }
+
   process(inputs) {
     const input = inputs[0];
     if (input && input.length > 0) {
       const channelData = input[0];
       if (channelData && channelData.length > 0) {
-        this.port.postMessage(channelData);
+        for (let i = 0; i < channelData.length; i++) {
+          this.buffer[this.bufferIndex++] = channelData[i];
+          if (this.bufferIndex >= this.bufferSize) {
+            this.port.postMessage(this.buffer.slice(0));
+            this.bufferIndex = 0;
+          }
+        }
       }
     }
     return true;
@@ -67,7 +82,7 @@ export function useAudioRecorder(onAudioChunk) {
         workletNode.connect(silentGain);
         silentGain.connect(ctx.destination);
 
-        logger.info('Started AudioWorkletNode recording pipeline.');
+        logger.info('Started AudioWorkletNode recording pipeline with 4096-sample chunk buffering.');
       } else {
         // Fallback to ScriptProcessorNode for legacy browser compatibility
         const processor = ctx.createScriptProcessor(4096, 1, 1);

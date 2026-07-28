@@ -12,6 +12,10 @@ export function useGeminiLive(settings) {
   const [transcripts, setTranscripts] = useState([]);
   const [errorInfo, setErrorInfo] = useState(null);
   const [cameraActive, setCameraActive] = useState(false);
+  
+  // Real-time live caption state
+  const [liveCaptionText, setLiveCaptionText] = useState('');
+  const [liveCaptionSpeaker, setLiveCaptionSpeaker] = useState('user'); // 'user' | 'assistant'
 
   // Audio Hooks
   const mic = useMicrophone(settings.audioInputDevice);
@@ -51,6 +55,55 @@ export function useGeminiLive(settings) {
     });
   }, []);
 
+  // Web Speech API real-time speech recognition for live user input captions
+  useEffect(() => {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) return;
+
+    let recognition = null;
+
+    if ((fsmState === CONNECTION_STATES.CONNECTED || fsmState === CONNECTION_STATES.LISTENING) && !mic.isMuted) {
+      try {
+        recognition = new SpeechRecognition();
+        recognition.continuous = true;
+        recognition.interimResults = true;
+        recognition.lang = 'en-US';
+
+        recognition.onresult = (event) => {
+          let interim = '';
+          let final = '';
+
+          for (let i = event.resultIndex; i < event.results.length; ++i) {
+            if (event.results[i].isFinal) {
+              final += event.results[i][0].transcript;
+            } else {
+              interim += event.results[i][0].transcript;
+            }
+          }
+
+          const currentText = (final || interim).trim();
+          if (currentText) {
+            setLiveCaptionSpeaker('user');
+            setLiveCaptionText(currentText);
+            if (final) {
+              addTranscript('user', final);
+            }
+          }
+        };
+
+        recognition.start();
+      } catch (err) {
+        logger.warn('Web Speech Recognition error:', err);
+      }
+    }
+
+    return () => {
+      if (recognition) {
+        try { recognition.stop(); } catch (e) {}
+      }
+    };
+  }, [fsmState, mic.isMuted, addTranscript]);
+
   // Subscribe to GeminiLiveService Event Bus
   useEffect(() => {
     const unsubState = geminiLiveService.on('stateChanged', ({ state, data }) => {
@@ -62,6 +115,8 @@ export function useGeminiLive(settings) {
     });
 
     const unsubTranscript = geminiLiveService.on('transcriptReceived', (text) => {
+      setLiveCaptionSpeaker('assistant');
+      setLiveCaptionText(prev => (liveCaptionSpeaker === 'assistant' ? `${prev} ${text}` : text));
       addTranscript('assistant', text);
     });
 
@@ -86,7 +141,7 @@ export function useGeminiLive(settings) {
       unsubInterrupted();
       unsubError();
     };
-  }, [addTranscript, player, recorder]);
+  }, [addTranscript, player, recorder, liveCaptionSpeaker]);
 
   // Connect to Gemini Live Agent
   const connectAgent = useCallback(async () => {
@@ -101,6 +156,7 @@ export function useGeminiLive(settings) {
     }
 
     setErrorInfo(null);
+    setLiveCaptionText('');
 
     // Initialize Microphone
     const stream = await mic.startMicrophone(settings.audioInputDevice);
@@ -129,6 +185,7 @@ export function useGeminiLive(settings) {
     recorder.stopRecording();
     player.stopPlayback();
     mic.stopMicrophone();
+    setLiveCaptionText('');
   }, [recorder, player, mic]);
 
   // Toggle Mute State
@@ -157,12 +214,15 @@ export function useGeminiLive(settings) {
   // Clear Transcripts
   const clearTranscripts = useCallback(() => {
     setTranscripts([]);
+    setLiveCaptionText('');
   }, []);
 
   return {
     fsmState,
     agentState,
     transcripts,
+    liveCaptionText,
+    liveCaptionSpeaker,
     errorInfo,
     cameraActive,
     setCameraActive,

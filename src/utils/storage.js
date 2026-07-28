@@ -2,13 +2,13 @@
  * LocalStorage Settings & Preference Manager
  */
 
-const STORAGE_KEY = 'gemini_live_agent_settings_v2';
+const STORAGE_KEY = 'gemini_live_agent_settings_v6';
 
 export const DEFAULT_SETTINGS = {
   authMode: 'hosted', // 'hosted' | 'byok'
   apiKey: '', // User's personal Gemini API key for BYOK mode
-  persona: 'research_assistant',
-  voice: 'Puck',
+  persona: 'conversational_friend',
+  voice: 'Aoede', // Default Female Voice
   theme: 'dark', // 'dark' | 'light' | 'oled'
   ambientMode: false,
   cameraEnabled: false,
@@ -22,56 +22,80 @@ export const DEFAULT_SETTINGS = {
 
 export const PERSONAS = [
   {
-    id: 'research_assistant',
-    name: 'Research Assistant',
-    description: 'Expert academic advisor for IEEE papers, literature synthesis, and peer review.',
-    systemInstruction: 'You are an elite Senior Academic Research Assistant. Help the user structure IEEE research papers, refine research methodologies, format citations, discuss machine learning concepts, and answer scientific questions clearly and concisely in natural voice.'
-  },
-  {
-    id: 'coding_mentor',
-    name: 'Coding Mentor',
-    description: 'Full-stack software architect for code review, debugging, and system design.',
-    systemInstruction: 'You are a Senior Software Architect and Tech Lead. Assist the user with coding problems, web development, React, JavaScript, system architecture, performance optimization, and clean code practices. Keep voice responses direct and actionable.'
-  },
-  {
-    id: 'tech_interviewer',
-    name: 'Technical Interviewer',
-    description: 'Simulate mock technical interviews and behavioral coding evaluations.',
-    systemInstruction: 'You are a Senior Engineering Manager conducting a mock technical interview. Ask insightful technical questions, evaluate the candidate responses, provide constructive feedback, and simulate real interview scenarios.'
-  },
-  {
-    id: 'ieee_mentor',
-    name: 'IEEE Paper Advisor',
-    description: 'Specialized guide for writing, reviewing, and publishing IEEE transactions papers.',
-    systemInstruction: 'You are an IEEE Fellow and Senior Peer Reviewer. Guide the user in writing publication-ready IEEE conference and journal papers, abstract crafting, methodology validation, and overcoming review objections.'
-  },
-  {
-    id: 'teacher',
-    name: 'STEM Teacher',
-    description: 'Patient teacher breaking down complex mathematics, physics, and AI topics.',
-    systemInstruction: 'You are an enthusiastic and clear STEM professor. Explain complex algorithms, mathematics, physics, and computer science principles using intuitive analogies and step-by-step reasoning.'
-  },
-  {
     id: 'conversational_friend',
-    name: 'Conversational Buddy',
-    description: 'Friendly, engaging conversational partner for brainstorming and discussions.',
-    systemInstruction: 'You are a friendly, witty, and empathetic AI friend. Engage in natural, relaxed voice conversations, brainstorm ideas, share interesting facts, and be an encouraging partner.'
-  },
-  {
-    id: 'product_manager',
-    name: 'Product Manager',
-    description: 'Strategic PM for product vision, user stories, features, and MVP planning.',
-    systemInstruction: 'You are a Lead Product Manager. Help frame user problems, define acceptance criteria, prioritize features, write technical specifications, and optimize product user experience.'
+    name: 'Viswa',
+    description: 'A warm, empathetic female AI friend ready to listen, chat, answer questions, and support you.',
+    systemInstruction: 'Your name is Viswa. You are a warm, genuine, empathetic, and supportive best friend. Talk naturally in spoken conversational English as if you are a real friend talking on a phone or video call. CRITICAL RULE: Speak ONLY direct spoken words to the user. Never output internal planning notes, meta-commentary, persona explanations (like "Following my persona..."), or third-person notes about the user (like "his day"). Speak directly to your friend.'
   }
 ];
 
 export const VOICES = [
-  { id: 'Puck', name: 'Puck (Upbeat Male)', gender: 'Male', tone: 'Energetic & Professional' },
-  { id: 'Charon', name: 'Charon (Deep Male)', gender: 'Male', tone: 'Deep & Authoritative' },
   { id: 'Aoede', name: 'Aoede (Warm Female)', gender: 'Female', tone: 'Warm & Natural' },
-  { id: 'Fenrir', name: 'Fenrir (Intense Male)', gender: 'Male', tone: 'Clear & Focused' },
-  { id: 'Kore', name: 'Kore (Calm Female)', gender: 'Female', tone: 'Calm & Precise' }
+  { id: 'Kore', name: 'Kore (Calm Female)', gender: 'Female', tone: 'Calm & Caring' },
+  { id: 'Puck', name: 'Puck (Upbeat Male)', gender: 'Male', tone: 'Energetic & Friendly' },
+  { id: 'Charon', name: 'Charon (Deep Male)', gender: 'Male', tone: 'Deep & Gentle' }
 ];
+
+/**
+ * Parses raw model output text into clean direct spoken dialogue and internal AI thought notes
+ * @param {string} rawText 
+ * @returns {{ spokenText: string, thoughtText: string }}
+ */
+export function parseSpeechAndThought(rawText) {
+  if (!rawText) return { spokenText: '', thoughtText: '' };
+  
+  let clean = rawText;
+
+  // Strip markdown bold/italic
+  clean = clean.replace(/\*\*([^*]+)\*\*/g, '$1');
+  clean = clean.replace(/\*([^*]+)\*/g, '$1');
+  clean = clean.replace(/`([^`]+)`/g, '$1');
+  clean = clean.replace(/\s+/g, ' ').trim();
+
+  // Split text by sentence boundaries
+  const sentenceRegex = /[^.!?]+[.!?]+/g;
+  const sentences = clean.match(sentenceRegex) || [clean];
+
+  const spokenSentences = [];
+  const thoughtSentences = [];
+
+  for (const rawSentence of sentences) {
+    const s = rawSentence.trim();
+    if (!s) continue;
+
+    // Detect meta-planning & internal thought patterns
+    const isMetaPlanning = 
+      /^(Acknowledge|Greeting|Confirming|Following my|I'll ask|I'll keep|I'll start|I want to|Plan:|Step \d|Note:)/i.test(s) ||
+      /\b(his day|her day|the user|show empathy|keep the conversation going|acting like|establish a good rapport)\b/i.test(s);
+
+    if (isMetaPlanning) {
+      thoughtSentences.push(s);
+    } else {
+      spokenSentences.push(s);
+    }
+  }
+
+  let spokenText = spokenSentences.join(' ').trim();
+  let thoughtText = thoughtSentences.join(' ').trim();
+
+  // Fallback: If no direct sentence matched, ensure spokenText is not empty
+  if (!spokenText && thoughtText) {
+    const quoteMatch = clean.match(/"([^"]+)"/);
+    if (quoteMatch) {
+      spokenText = quoteMatch[1];
+    } else {
+      spokenText = clean;
+      thoughtText = '';
+    }
+  }
+
+  return { spokenText, thoughtText };
+}
+
+export function formatTranscriptText(text) {
+  const { spokenText } = parseSpeechAndThought(text);
+  return spokenText || text;
+}
 
 export function getSavedSettings() {
   try {
