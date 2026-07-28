@@ -7,9 +7,8 @@ const WORKLET_CODE = `
 class PCMProcessor extends AudioWorkletProcessor {
   constructor() {
     super();
-    // Accumulate ~85ms of audio samples (4096 samples at 48kHz) before posting
-    // Reduces WebSocket frame rate from 375 msg/sec to ~11 msg/sec for low latency
-    this.bufferSize = 4096;
+    // Accumulate ~21ms of audio (1024 samples at 48kHz) per Google Gemini Live API low-latency recommendations
+    this.bufferSize = 1024;
     this.buffer = new Float32Array(this.bufferSize);
     this.bufferIndex = 0;
   }
@@ -35,13 +34,27 @@ registerProcessor('pcm-processor', PCMProcessor);
 `;
 
 /**
+ * Calculates Root Mean Square (RMS) energy of an audio buffer
+ * @param {Float32Array} buffer 
+ * @returns {number}
+ */
+function getBufferRMS(buffer) {
+  let sum = 0;
+  for (let i = 0; i < buffer.length; i++) {
+    sum += buffer[i] * buffer[i];
+  }
+  return Math.sqrt(sum / buffer.length);
+}
+
+/**
  * Custom React hook to capture browser audio stream via AudioWorkletNode (with ScriptProcessor fallback)
- * Encodes Float32 microphone data to 16kHz Int16 PCM chunks for Gemini Live API
+ * Encodes Float32 microphone data to 16kHz Int16 PCM chunks for Gemini Live API with low-latency silence suppression VAD
  */
 export function useAudioRecorder(onAudioChunk) {
   const nodeRef = useRef(null);
   const isRecordingRef = useRef(false);
   const workletUrlRef = useRef(null);
+  const silentChunksCountRef = useRef(0);
 
   const startRecording = useCallback(async (mediaStream) => {
     if (!mediaStream || isRecordingRef.current) return;
@@ -50,6 +63,7 @@ export function useAudioRecorder(onAudioChunk) {
       const ctx = audioProcessor.getAudioContext();
       const source = ctx.createMediaStreamSource(mediaStream);
       isRecordingRef.current = true;
+      silentChunksCountRef.current = 0;
 
       // Modern AudioWorkletNode approach
       if (ctx.audioWorklet) {
@@ -67,25 +81,38 @@ export function useAudioRecorder(onAudioChunk) {
           const inputBuffer = e.data;
           const sampleRate = ctx.sampleRate;
 
-          const pcm16k = downsampleTo16kHzPCM(inputBuffer, sampleRate, 16000);
-          const base64Chunk = pcmToBase64(pcm16k);
+          // Low-latency silence suppression & VAD end-of-turn optimization
+          const rms = getBufferRMS(inputBuffer);
+          const SILENCE_THRESHOLD = 0.005;
 
-          if (onAudioChunk && base64Chunk) {
-            onAudioChunk(base64Chunk);
+          if (rms > SILENCE_THRESHOLD) {
+            silentChunksCountRef.current = 0;
+          } else {
+            silentChunksCountRef.current++;
+          }
+
+          // Stream audio while speech is active + max 3 trailing silence padding chunks (60ms)
+          // Pausing continuous silence streaming allows Gemini server VAD to trigger instant turn completion
+          if (silentChunksCountRef.current <= 3) {
+            const pcm16k = downsampleTo16kHzPCM(inputBuffer, sampleRate, 16000);
+            const base64Chunk = pcmToBase64(pcm16k);
+
+            if (onAudioChunk && base64Chunk) {
+              onAudioChunk(base64Chunk);
+            }
           }
         };
 
         source.connect(workletNode);
-        // Connect to destination via silent gain to ensure Web Audio graph continuously pulls processing frames
         const silentGain = ctx.createGain();
         silentGain.gain.value = 0;
         workletNode.connect(silentGain);
         silentGain.connect(ctx.destination);
 
-        logger.info('Started AudioWorkletNode recording pipeline with 4096-sample chunk buffering.');
+        logger.info('Started low-latency AudioWorkletNode pipeline (~21ms chunks + silence VAD suppression).');
       } else {
         // Fallback to ScriptProcessorNode for legacy browser compatibility
-        const processor = ctx.createScriptProcessor(4096, 1, 1);
+        const processor = ctx.createScriptProcessor(2048, 1, 1);
         nodeRef.current = processor;
 
         processor.onaudioprocess = (e) => {
@@ -93,11 +120,20 @@ export function useAudioRecorder(onAudioChunk) {
           const inputBuffer = e.inputBuffer.getChannelData(0);
           const sampleRate = ctx.sampleRate;
 
-          const pcm16k = downsampleTo16kHzPCM(inputBuffer, sampleRate, 16000);
-          const base64Chunk = pcmToBase64(pcm16k);
+          const rms = getBufferRMS(inputBuffer);
+          if (rms > 0.005) {
+            silentChunksCountRef.current = 0;
+          } else {
+            silentChunksCountRef.current++;
+          }
 
-          if (onAudioChunk && base64Chunk) {
-            onAudioChunk(base64Chunk);
+          if (silentChunksCountRef.current <= 3) {
+            const pcm16k = downsampleTo16kHzPCM(inputBuffer, sampleRate, 16000);
+            const base64Chunk = pcmToBase64(pcm16k);
+
+            if (onAudioChunk && base64Chunk) {
+              onAudioChunk(base64Chunk);
+            }
           }
         };
 

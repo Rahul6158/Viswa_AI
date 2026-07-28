@@ -1,5 +1,5 @@
 import React from 'react';
-import { Mic, Heart, Sliders, MessageSquareText, Moon, Sun, Monitor, Eye } from 'lucide-react';
+import { Heart, Sliders, MessageSquareText, Moon, Sun, Monitor, Eye } from 'lucide-react';
 
 export function Header({
   theme,
@@ -13,9 +13,17 @@ export function Header({
   return (
     <header className="app-header">
       <div className="brand-section">
-        <div className="brand-icon">
-          <Mic size={18} />
-        </div>
+        <img
+          src="/logo.png"
+          alt="Viswa AI Logo"
+          style={{
+            width: '32px',
+            height: '32px',
+            borderRadius: 'var(--radius-sm)',
+            objectFit: 'cover',
+            boxShadow: '0 0 12px var(--accent-glow)'
+          }}
+        />
         <div>
           <h1 className="brand-title">Viswa AI</h1>
         </div>
