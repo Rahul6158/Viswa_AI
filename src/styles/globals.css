@@ -1,0 +1,113 @@
+/* ==========================================================================
+   Gemini Live Voice Assistant - Global Theme & CSS Token System
+   Inspired by OpenAI Voice, Linear, Apple, and Arc Browser
+   ========================================================================== */
+
+:root {
+  /* Color Palette - Default Dark Glassmorphism */
+  --bg-primary: #090a0f;
+  --bg-secondary: rgba(18, 20, 29, 0.7);
+  --bg-tertiary: rgba(28, 32, 46, 0.6);
+  --bg-glass: rgba(15, 17, 26, 0.75);
+  --bg-card: rgba(255, 255, 255, 0.03);
+
+  --border-subtle: rgba(255, 255, 255, 0.08);
+  --border-medium: rgba(255, 255, 255, 0.15);
+  --border-glow: rgba(99, 102, 241, 0.4);
+
+  --text-primary: #f8fafc;
+  --text-secondary: #94a3b8;
+  --text-muted: #64748b;
+
+  --accent-primary: #6366f1; /* Indigo */
+  --accent-secondary: #8b5cf6; /* Violet */
+  --accent-glow: rgba(99, 102, 241, 0.25);
+
+  --status-listening: #10b981; /* Emerald */
+  --status-thinking: #f59e0b; /* Amber */
+  --status-speaking: #3b82f6; /* Electric Blue */
+  --status-muted: #ef4444; /* Rose */
+  --status-error: #f43f5e;
+
+  /* Spacing & Radii */
+  --radius-sm: 8px;
+  --radius-md: 14px;
+  --radius-lg: 24px;
+  --radius-full: 9999px;
+
+  --shadow-subtle: 0 4px 20px -2px rgba(0, 0, 0, 0.5);
+  --shadow-glass: 0 8px 32px 0 rgba(0, 0, 0, 0.4);
+  --shadow-glow: 0 0 35px rgba(99, 102, 241, 0.3);
+
+  --font-sans: 'Inter', 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+
+  --backdrop-blur: blur(20px) saturate(180%);
+}
+
+/* Light Theme Override */
+body.theme-light {
+  --bg-primary: #f8fafc;
+  --bg-secondary: rgba(255, 255, 255, 0.85);
+  --bg-tertiary: rgba(241, 245, 249, 0.9);
+  --bg-glass: rgba(255, 255, 255, 0.8);
+  --bg-card: rgba(0, 0, 0, 0.02);
+
+  --border-subtle: rgba(0, 0, 0, 0.08);
+  --border-medium: rgba(0, 0, 0, 0.15);
+  --border-glow: rgba(99, 102, 241, 0.3);
+
+  --text-primary: #0f172a;
+  --text-secondary: #475569;
+  --text-muted: #94a3b8;
+
+  --shadow-glass: 0 8px 32px 0 rgba(31, 38, 135, 0.1);
+}
+
+/* OLED Theme Override */
+body.theme-oled {
+  --bg-primary: #000000;
+  --bg-secondary: #0a0a0a;
+  --bg-tertiary: #121212;
+  --bg-glass: rgba(10, 10, 10, 0.9);
+  --border-subtle: rgba(255, 255, 255, 0.12);
+}
+
+/* CSS Reset & Base */
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html, body {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  font-family: var(--font-sans);
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+#root {
+  width: 100%;
+  height: 100%;
+}
+
+/* Scrollbar Customization */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border-medium);
+  border-radius: var(--radius-full);
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-muted);
+}
