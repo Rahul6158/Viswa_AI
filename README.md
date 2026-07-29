@@ -1,4 +1,4 @@
-# 🎙️ Viswa AI - Gemini Multimodal Live Voice Assistant
+# 🎙️ Vispo AI - Gemini Multimodal Live Voice Assistant
 
 An enterprise-grade, real-time voice and vision web application powered by **Google's Gemini Multimodal Live API** (`bidiGenerateContent`) and the official `@google/genai` SDK.
 
