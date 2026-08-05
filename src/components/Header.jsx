@@ -16,11 +16,11 @@ export function Header({
       <div className="brand-section">
         <img
           src={logoImg}
-          alt="Viswa AI Logo"
+          alt="Vispo AI Logo"
           className="brand-logo"
         />
         <div>
-          <h1 className="brand-title">Viswa AI</h1>
+          <h1 className="brand-title">Vispo AI</h1>
         </div>
       </div>
 

@@ -2,11 +2,11 @@
  * Production Vercel Serverless Function Proxy for Gemini Multimodal Live API
  * Path: /api/gemini.js
  * 
- * Features:
- * - Queries Google Models API (/v1beta/models) and returns active model names for key
- * - Negotiates secure authentication ticket for hosted mode
- * - Never exposes permanent GEMINI_API_KEY to client JS
+ * Securely requests short-lived Ephemeral Tokens from Gemini API (v1alpha).
+ * Permanent GEMINI_API_KEY never enters client-side JavaScript.
  */
+
+import { GoogleGenAI } from '@google/genai';
 
 export default async function handler(req, res) {
   // CORS Headers
@@ -33,40 +33,50 @@ export default async function handler(req, res) {
   }
 
   try {
-    // Inspect raw Gemini Models API response
-    let rawModels = [];
+    const ai = new GoogleGenAI({ apiKey });
+    const expireTime = new Date(Date.now() + 30 * 60 * 1000).toISOString();
+
+    let ephemeralTokenStr = '';
     try {
-      const modelsRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`, {
-        method: 'GET',
-        headers: { 'Accept': 'application/json' }
+      const tokenRes = await ai.authTokens.create({
+        config: {
+          expireTime,
+          httpOptions: { apiVersion: 'v1alpha' }
+        }
+      });
+      ephemeralTokenStr = tokenRes.name || tokenRes.token || (typeof tokenRes === 'string' ? tokenRes : '');
+    } catch (tokenErr) {
+      console.warn('ai.authTokens.create failed, trying REST endpoint fallback:', tokenErr.message);
+      
+      const restRes = await fetch(`https://generativelanguage.googleapis.com/v1alpha/authTokens?key=${apiKey}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ expireTime })
       });
 
-      if (modelsRes.ok) {
-        const data = await modelsRes.json();
-        if (Array.isArray(data.models)) {
-          rawModels = data.models.map(m => (m.name || '').replace(/^models\//, ''));
-        }
+      if (restRes.ok) {
+        const data = await restRes.json();
+        ephemeralTokenStr = data.name || data.token || '';
       } else {
-        console.warn(`Models API returned HTTP ${modelsRes.status}`);
+        throw tokenErr;
       }
-    } catch (modelsErr) {
-      console.warn('Error querying Gemini Models API:', modelsErr);
     }
 
-    // Key-based auth ticket encoding
-    const encodedToken = Buffer.from(apiKey).toString('base64');
+    if (!ephemeralTokenStr) {
+      throw new Error('Failed to generate valid ephemeral session token.');
+    }
+
     return res.status(200).json({
       status: 'authenticated',
-      token: encodedToken,
-      isEphemeral: false,
-      availableModels: rawModels,
+      token: ephemeralTokenStr,
+      isEphemeral: true,
       timestamp: Date.now()
     });
 
   } catch (error) {
     console.error('Serverless auth proxy error:', error);
     return res.status(500).json({
-      error: 'Failed to negotiate live session ticket.',
+      error: 'Failed to negotiate live session ephemeral token.',
       code: 'AUTH_FAILED',
       details: error.message
     });

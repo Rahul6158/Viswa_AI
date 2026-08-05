@@ -8,10 +8,12 @@ import { logger } from '../utils/logger';
 import { checkBrowserCompatibility } from '../utils/browserCompat';
 import { metrics } from '../utils/metrics';
 import { GeminiError, ERROR_CODES } from '../utils/diagnostics';
+import { getLiveModelCandidates } from '../config/models';
 
-// Single source of truth state machine states
+// Expanded single source of truth state machine states
 export const CONNECTION_STATES = {
   INITIALIZING: 'INITIALIZING',
+  AUTHENTICATING: 'AUTHENTICATING',
   READY: 'READY',
   CONNECTING: 'CONNECTING',
   CONNECTED: 'CONNECTED',
@@ -24,9 +26,6 @@ export const CONNECTION_STATES = {
   ERROR: 'ERROR'
 };
 
-const WORKING_MODEL_CACHE_KEY = 'gemini_working_model_v2';
-const MODEL_CACHE_TTL_MS = 30 * 60 * 1000; // 30 minutes TTL
-
 class GeminiLiveService {
   constructor() {
     this.state = CONNECTION_STATES.INITIALIZING;
@@ -37,6 +36,10 @@ class GeminiLiveService {
     this.liveSession = null;
     this.abortController = null;
     
+    // PCM Buffer Queue for smooth audio streaming under socket backpressure
+    this.pcmQueue = [];
+    this.isFlushingPcmQueue = false;
+
     this.isOffline = typeof window !== 'undefined' && !navigator.onLine;
 
     this.bindNetworkListeners();
@@ -57,39 +60,6 @@ class GeminiLiveService {
       ));
     } else {
       this.transitionState(CONNECTION_STATES.READY);
-    }
-  }
-
-  /**
-   * Retrieves cached working model from localStorage if unexpired
-   * @returns {string|null}
-   */
-  getCachedWorkingModel() {
-    try {
-      const raw = localStorage.getItem(WORKING_MODEL_CACHE_KEY);
-      if (!raw) return null;
-      const data = JSON.parse(raw);
-      if (Date.now() - data.timestamp < MODEL_CACHE_TTL_MS) {
-        return data.model;
-      }
-    } catch (e) {
-      // Ignore parse errors
-    }
-    return null;
-  }
-
-  /**
-   * Caches working model name to localStorage
-   * @param {string} model 
-   */
-  setCachedWorkingModel(model) {
-    try {
-      localStorage.setItem(WORKING_MODEL_CACHE_KEY, JSON.stringify({
-        model,
-        timestamp: Date.now()
-      }));
-    } catch (e) {
-      // Ignore storage errors
     }
   }
 
@@ -147,7 +117,7 @@ class GeminiLiveService {
       this.isOffline = false;
       this.emit('networkStatusChanged', { online: true });
 
-      if (this.state === 'RECONNECTING') {
+      if (this.state === CONNECTION_STATES.RECONNECTING) {
         this.emit('resumeReconnect');
       }
     });
@@ -164,29 +134,26 @@ class GeminiLiveService {
   }
 
   /**
-   * Dynamically queries models via SDK and logs raw output for inspection
+   * Silently closes any previous active session without emitting DISCONNECTED
    */
-  async discoverModelsFromSDK() {
-    if (!this.ai) return [];
-    try {
-      logger.info('Querying available models via @google/genai SDK...');
-      const res = await this.ai.models.list();
-      
-      console.log('=== SDK MODELS ===');
-      console.log(JSON.stringify(res, null, 2));
-
-      const items = Array.isArray(res) ? res : (res?.models || []);
-      return items.map(m => (m.name || '').replace(/^models\//, '')).filter(Boolean);
-    } catch (err) {
-      logger.warn('Failed to list models via SDK:', err);
-      return [];
+  cleanupOldSession() {
+    this.cancel();
+    this.pcmQueue = [];
+    if (this.liveSession) {
+      const oldSession = this.liveSession;
+      this.liveSession = null;
+      try {
+        oldSession.close();
+      } catch (e) {
+        // Ignore close error
+      }
     }
   }
 
   /**
-   * Connects to Gemini Multimodal Live API using @google/genai SDK with single auth & iterative model loop
+   * Connects to Gemini Multimodal Live API using @google/genai SDK with single auth & targeted model fallback pair
    * @param {Object} options 
-   * @param {string} options.authMode - 'byok' | 'hosted'
+   * @param {string} options.authMode - 'hosted' | 'byok'
    * @param {string} [options.userApiKey] - User API Key for BYOK mode
    * @param {string} options.personaInstruction
    * @param {string} options.voiceName
@@ -198,16 +165,16 @@ class GeminiLiveService {
       return;
     }
 
-    this.disconnect();
+    this.cleanupOldSession();
     this.abortController = new AbortController();
     const signal = this.abortController.signal;
 
-    this.transitionState(CONNECTION_STATES.CONNECTING);
+    this.transitionState(CONNECTION_STATES.AUTHENTICATING);
 
     try {
-      // Step 1: Authenticate ONCE
+      // Step 1: Authenticate
       let activeKey = '';
-      let serverModels = [];
+      let isEphemeralToken = false;
 
       if (authMode === 'byok') {
         activeKey = (userApiKey || '').trim();
@@ -215,7 +182,7 @@ class GeminiLiveService {
           throw new GeminiError(ERROR_CODES.AUTH_FAILED, 'Please provide a valid Gemini API Key in Settings for BYOK mode.');
         }
       } else {
-        logger.info('Negotiating hosted live session ticket via /api/gemini...');
+        logger.info('Negotiating ephemeral token session via /api/gemini...');
         const proxyRes = await fetch('/api/gemini', {
           method: 'GET',
           headers: { 'Accept': 'application/json' },
@@ -230,44 +197,27 @@ class GeminiLiveService {
           throw new GeminiError(sessionData.code || ERROR_CODES.AUTH_FAILED, sessionData.error);
         }
 
-        serverModels = sessionData.availableModels || [];
-        activeKey = sessionData.isEphemeral ? sessionData.token : atob(sessionData.token).trim();
+        activeKey = sessionData.token;
+        isEphemeralToken = !!sessionData.isEphemeral;
       }
 
       metrics.recordAuthComplete();
       if (signal.aborted) return;
 
-      // Step 2: Instantiate SDK instance ONCE
-      if (!this.ai || this.activeApiKey !== activeKey) {
-        this.ai = new GoogleGenAI({ apiKey: activeKey });
-        this.activeApiKey = activeKey;
+      this.transitionState(CONNECTION_STATES.CONNECTING);
+
+      // Step 2: Instantiate SDK instance with v1alpha if ephemeral token is used
+      const sdkOptions = { apiKey: activeKey };
+      if (isEphemeralToken) {
+        sdkOptions.httpOptions = { apiVersion: 'v1alpha' };
       }
+      this.ai = new GoogleGenAI(sdkOptions);
+      this.activeApiKey = activeKey;
 
-      // Step 3: Build candidate models priority order
-      const cachedWorking = this.getCachedWorkingModel();
-      const sdkModels = await this.discoverModelsFromSDK();
+      // Step 3: Fast-path model candidate fallback pair
+      const candidates = getLiveModelCandidates();
+      logger.info('Connecting using model priority:', candidates);
 
-      let candidates = [];
-      if (cachedWorking) {
-        candidates.push(cachedWorking);
-      }
-
-      const defaultDocumentedLiveModels = [
-        'gemini-2.5-flash-native-audio-preview-12-2025',
-        'gemini-2.5-flash-native-audio-preview-09-2025',
-        'gemini-3.1-flash-live-preview',
-        'gemini-2.5-flash'
-      ];
-
-      for (const m of [...defaultDocumentedLiveModels, ...serverModels, ...sdkModels]) {
-        if (m && !candidates.includes(m)) {
-          candidates.push(m);
-        }
-      }
-
-      logger.info('Candidate models queue prepared:', candidates);
-
-      // Step 4: Iterative Connection Loop (No recursion!)
       let success = false;
       let lastErr = null;
 
@@ -286,12 +236,11 @@ class GeminiLiveService {
 
         if (connectionResult.success) {
           logger.info(`Successfully established Live session with model: ${modelName}`);
-          this.setCachedWorkingModel(modelName);
           success = true;
           break;
         } else {
           lastErr = connectionResult.error;
-          logger.warn(`Model ${modelName} connection attempt failed. Trying next candidate...`);
+          logger.warn(`Model ${modelName} connection attempt failed. Trying fallback model if available...`);
         }
       }
 
@@ -319,6 +268,7 @@ class GeminiLiveService {
   attemptSingleModelConnection(modelName, personaInstruction, voiceName, signal) {
     return new Promise((resolve) => {
       let isSettled = false;
+      let currentSession = null;
 
       const finish = (result) => {
         if (isSettled) return;
@@ -331,6 +281,8 @@ class GeminiLiveService {
           model: modelName,
           config: {
             responseModalities: ['AUDIO'],
+            inputAudioTranscription: {},
+            outputAudioTranscription: {},
             speechConfig: {
               voiceConfig: {
                 prebuiltVoiceConfig: {
@@ -339,7 +291,7 @@ class GeminiLiveService {
               }
             },
             systemInstruction: {
-              parts: [{ text: personaInstruction || 'Your name is Viswa. You are a warm, genuine, empathetic, and supportive best friend. Speak ONLY your direct spoken words to the user. Never output internal planning notes, meta-commentary, persona explanations, or third-person notes about the user.' }]
+              parts: [{ text: personaInstruction || 'Your name is Vispo. You are a warm, genuine, empathetic, and supportive best friend. Speak naturally as if talking on a phone call. Never output internal planning notes or persona explanations.' }]
             }
           },
           callbacks: {
@@ -364,12 +316,15 @@ class GeminiLiveService {
             onclose: (evt) => {
               logger.warn(`SDK session closed for ${modelName}. Code: ${evt?.code}, Reason: "${evt?.reason}"`);
               finish({ success: false, error: new Error(evt?.reason || 'Closed') });
-              if (this.state === CONNECTION_STATES.CONNECTED || this.state === CONNECTION_STATES.LISTENING) {
+
+              // Only transition state if this session is STILL the active session
+              if (this.liveSession === currentSession && (this.state === CONNECTION_STATES.CONNECTED || this.state === CONNECTION_STATES.LISTENING || this.state === CONNECTION_STATES.SPEAKING)) {
                 this.transitionState(CONNECTION_STATES.DISCONNECTED);
               }
             }
           }
         }).then(session => {
+          currentSession = session;
           this.liveSession = session;
         }).catch(err => {
           finish({ success: false, error: err });
@@ -382,12 +337,19 @@ class GeminiLiveService {
   }
 
   /**
-   * Handles SDK incoming messages
+   * Handles SDK incoming messages and extracts server content
    */
   handleSDKMessage(data) {
     try {
       if (data.serverContent) {
-        const { modelTurn, turnComplete, interrupted } = data.serverContent;
+        const {
+          modelTurn,
+          turnComplete,
+          interrupted,
+          inputTranscription,
+          interimInputTranscription,
+          outputTranscription
+        } = data.serverContent;
 
         if (interrupted) {
           logger.info('Response interrupted by user voice.');
@@ -395,24 +357,40 @@ class GeminiLiveService {
           this.emit('interrupted');
         }
 
+        // Native Gemini user speech input transcription
+        if (inputTranscription && inputTranscription.text) {
+          logger.info(`Received input transcription: "${inputTranscription.text}"`);
+          metrics.recordFirstTranscript();
+          metrics.markTurnStart();
+          this.emit('userTranscriptReceived', { text: inputTranscription.text, isFinal: true });
+        } else if (interimInputTranscription && interimInputTranscription.text) {
+          this.emit('userTranscriptReceived', { text: interimInputTranscription.text, isFinal: false });
+        }
+
+        // Native Gemini Vispo spoken output transcription
+        if (outputTranscription && outputTranscription.text) {
+          logger.info(`Received output transcription: "${outputTranscription.text}"`);
+          metrics.recordFirstTranscript();
+          this.emit('assistantTranscriptReceived', { text: outputTranscription.text });
+        }
+
+        // Native audio output chunk handling
         if (modelTurn && modelTurn.parts) {
           for (const part of modelTurn.parts) {
             if (part.inlineData && part.inlineData.mimeType && part.inlineData.mimeType.startsWith('audio/pcm')) {
-              logger.info(`Received audio output chunk from Gemini (${part.inlineData.data.length} bytes base64).`);
+              metrics.recordFirstAudio();
               this.transitionState(CONNECTION_STATES.SPEAKING);
               metrics.recordBytesDownloaded(part.inlineData.data.length);
               this.emit('audioReceived', part.inlineData.data);
-            }
-            if (part.text) {
-              logger.info(`Received text output from Gemini: "${part.text.substring(0, 30)}..."`);
-              this.emit('transcriptReceived', part.text);
             }
           }
         }
 
         if (turnComplete) {
           logger.info('Model turn completed.');
+          metrics.markTurnComplete();
           this.transitionState(CONNECTION_STATES.LISTENING);
+          this.emit('turnComplete');
         }
       }
     } catch (err) {
@@ -421,47 +399,68 @@ class GeminiLiveService {
   }
 
   /**
-   * Sends real-time 16kHz PCM audio chunk to Live session
+   * Sends real-time 16kHz PCM audio chunk via bounded queue
    * @param {string} base64Audio 
    */
   sendRealtimeAudio(base64Audio) {
     if (!this.liveSession || this.state === CONNECTION_STATES.DISCONNECTED || this.state === CONNECTION_STATES.ERROR) return;
 
-    try {
-      metrics.recordBytesUploaded(base64Audio.length);
+    // Enqueue audio chunk to handle backpressure
+    this.pcmQueue.push(base64Audio);
+    if (this.pcmQueue.length > 50) {
+      this.pcmQueue.shift(); // Drop oldest chunk if buffer overflows (>1s buffer)
+    }
 
-      if (typeof this.liveSession.sendRealtimeInput === 'function') {
-        try {
-          this.liveSession.sendRealtimeInput({
-            audio: {
-              data: base64Audio,
-              mimeType: 'audio/pcm;rate=16000'
+    this.flushPcmQueue();
+  }
+
+  /**
+   * Flushes queued PCM audio chunks to WebSocket session
+   */
+  flushPcmQueue() {
+    if (this.isFlushingPcmQueue || !this.liveSession) return;
+    this.isFlushingPcmQueue = true;
+
+    try {
+      while (this.pcmQueue.length > 0) {
+        const chunk = this.pcmQueue.shift();
+        metrics.recordBytesUploaded(chunk.length);
+
+        if (typeof this.liveSession.sendRealtimeInput === 'function') {
+          try {
+            this.liveSession.sendRealtimeInput({
+              audio: {
+                data: chunk,
+                mimeType: 'audio/pcm;rate=16000'
+              }
+            });
+          } catch (e1) {
+            this.liveSession.sendRealtimeInput({
+              mediaChunks: [
+                {
+                  mimeType: 'audio/pcm;rate=16000',
+                  data: chunk
+                }
+              ]
+            });
+          }
+        } else if (typeof this.liveSession.send === 'function') {
+          this.liveSession.send({
+            realtimeInput: {
+              mediaChunks: [
+                {
+                  mimeType: 'audio/pcm;rate=16000',
+                  data: chunk
+                }
+              ]
             }
           });
-        } catch (e1) {
-          this.liveSession.sendRealtimeInput({
-            mediaChunks: [
-              {
-                mimeType: 'audio/pcm;rate=16000',
-                data: base64Audio
-              }
-            ]
-          });
         }
-      } else if (typeof this.liveSession.send === 'function') {
-        this.liveSession.send({
-          realtimeInput: {
-            mediaChunks: [
-              {
-                mimeType: 'audio/pcm;rate=16000',
-                data: base64Audio
-              }
-            ]
-          }
-        });
       }
     } catch (err) {
-      logger.error('Failed to send audio chunk to SDK session:', err);
+      logger.error('Failed to send queued PCM audio chunk to SDK session:', err);
+    } finally {
+      this.isFlushingPcmQueue = false;
     }
   }
 
@@ -526,15 +525,7 @@ class GeminiLiveService {
    * Disconnects session and cleans up resources completely
    */
   disconnect() {
-    this.cancel();
-    if (this.liveSession) {
-      try {
-        this.liveSession.close();
-      } catch (e) {
-        // Ignore close error
-      }
-      this.liveSession = null;
-    }
+    this.cleanupOldSession();
     metrics.endSession('User Disconnect');
     this.transitionState(CONNECTION_STATES.DISCONNECTED);
   }

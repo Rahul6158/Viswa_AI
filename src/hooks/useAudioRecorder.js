@@ -34,27 +34,13 @@ registerProcessor('pcm-processor', PCMProcessor);
 `;
 
 /**
- * Calculates Root Mean Square (RMS) energy of an audio buffer
- * @param {Float32Array} buffer 
- * @returns {number}
- */
-function getBufferRMS(buffer) {
-  let sum = 0;
-  for (let i = 0; i < buffer.length; i++) {
-    sum += buffer[i] * buffer[i];
-  }
-  return Math.sqrt(sum / buffer.length);
-}
-
-/**
  * Custom React hook to capture browser audio stream via AudioWorkletNode (with ScriptProcessor fallback)
- * Encodes Float32 microphone data to 16kHz Int16 PCM chunks for Gemini Live API with low-latency silence suppression VAD
+ * Encodes Float32 microphone data to 16kHz Int16 PCM chunks for continuous streaming to Gemini Live API.
  */
 export function useAudioRecorder(onAudioChunk) {
   const nodeRef = useRef(null);
   const isRecordingRef = useRef(false);
   const workletUrlRef = useRef(null);
-  const silentChunksCountRef = useRef(0);
 
   const startRecording = useCallback(async (mediaStream) => {
     if (!mediaStream || isRecordingRef.current) return;
@@ -63,7 +49,6 @@ export function useAudioRecorder(onAudioChunk) {
       const ctx = audioProcessor.getAudioContext();
       const source = ctx.createMediaStreamSource(mediaStream);
       isRecordingRef.current = true;
-      silentChunksCountRef.current = 0;
 
       // Modern AudioWorkletNode approach
       if (ctx.audioWorklet) {
@@ -81,25 +66,12 @@ export function useAudioRecorder(onAudioChunk) {
           const inputBuffer = e.data;
           const sampleRate = ctx.sampleRate;
 
-          // Low-latency silence suppression & VAD end-of-turn optimization
-          const rms = getBufferRMS(inputBuffer);
-          const SILENCE_THRESHOLD = 0.005;
+          // Downsample float32 mic data to 16kHz Int16 PCM for Gemini Live server VAD
+          const pcm16k = downsampleTo16kHzPCM(inputBuffer, sampleRate, 16000);
+          const base64Chunk = pcmToBase64(pcm16k);
 
-          if (rms > SILENCE_THRESHOLD) {
-            silentChunksCountRef.current = 0;
-          } else {
-            silentChunksCountRef.current++;
-          }
-
-          // Stream audio while speech is active + max 3 trailing silence padding chunks (60ms)
-          // Pausing continuous silence streaming allows Gemini server VAD to trigger instant turn completion
-          if (silentChunksCountRef.current <= 3) {
-            const pcm16k = downsampleTo16kHzPCM(inputBuffer, sampleRate, 16000);
-            const base64Chunk = pcmToBase64(pcm16k);
-
-            if (onAudioChunk && base64Chunk) {
-              onAudioChunk(base64Chunk);
-            }
+          if (onAudioChunk && base64Chunk) {
+            onAudioChunk(base64Chunk);
           }
         };
 
@@ -109,7 +81,7 @@ export function useAudioRecorder(onAudioChunk) {
         workletNode.connect(silentGain);
         silentGain.connect(ctx.destination);
 
-        logger.info('Started low-latency AudioWorkletNode pipeline (~21ms chunks + silence VAD suppression).');
+        logger.info('Started low-latency AudioWorkletNode PCM recording pipeline.');
       } else {
         // Fallback to ScriptProcessorNode for legacy browser compatibility
         const processor = ctx.createScriptProcessor(2048, 1, 1);
@@ -120,26 +92,17 @@ export function useAudioRecorder(onAudioChunk) {
           const inputBuffer = e.inputBuffer.getChannelData(0);
           const sampleRate = ctx.sampleRate;
 
-          const rms = getBufferRMS(inputBuffer);
-          if (rms > 0.005) {
-            silentChunksCountRef.current = 0;
-          } else {
-            silentChunksCountRef.current++;
-          }
+          const pcm16k = downsampleTo16kHzPCM(inputBuffer, sampleRate, 16000);
+          const base64Chunk = pcmToBase64(pcm16k);
 
-          if (silentChunksCountRef.current <= 3) {
-            const pcm16k = downsampleTo16kHzPCM(inputBuffer, sampleRate, 16000);
-            const base64Chunk = pcmToBase64(pcm16k);
-
-            if (onAudioChunk && base64Chunk) {
-              onAudioChunk(base64Chunk);
-            }
+          if (onAudioChunk && base64Chunk) {
+            onAudioChunk(base64Chunk);
           }
         };
 
         source.connect(processor);
         processor.connect(ctx.destination);
-        logger.info('Started ScriptProcessorNode fallback recording pipeline.');
+        logger.info('Started ScriptProcessorNode fallback PCM recording pipeline.');
       }
     } catch (err) {
       logger.error('Failed to start audio recording node:', err);

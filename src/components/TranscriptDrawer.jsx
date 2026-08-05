@@ -12,7 +12,7 @@ export function TranscriptDrawer({ isOpen, onClose, transcripts, onClear }) {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `viswa-ai-transcript-${Date.now()}.txt`;
+    a.download = `vispo-ai-transcript-${Date.now()}.txt`;
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -23,7 +23,7 @@ export function TranscriptDrawer({ isOpen, onClose, transcripts, onClear }) {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `viswa-ai-transcript-${Date.now()}.json`;
+    a.download = `vispo-ai-transcript-${Date.now()}.json`;
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -67,7 +67,7 @@ export function TranscriptDrawer({ isOpen, onClose, transcripts, onClear }) {
               <div className="bubble-meta">
                 <span style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontWeight: 600 }}>
                   {t.speaker === 'user' ? <User size={14} /> : <Bot size={14} />}
-                  {t.speaker === 'user' ? 'You' : 'AI Friend'}
+                  {t.speaker === 'user' ? 'You' : 'Vispo'}
                 </span>
                 <span>{new Date(t.timestamp).toLocaleTimeString()}</span>
               </div>

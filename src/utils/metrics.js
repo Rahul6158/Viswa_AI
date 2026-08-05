@@ -1,7 +1,7 @@
 /**
- * Runtime Connection Metrics Tracker
- * Collects connection latency, auth duration, response latency, audio/transcript latency,
- * session duration, reconnect counts, bytes transferred, model metadata, and auth mode.
+ * Runtime Connection & Performance Metrics Tracker
+ * Collects connection latency, auth duration, time to first transcript, time to first audio,
+ * turn latency, session duration, reconnect counts, bytes transferred, model metadata.
  */
 
 class ConnectionMetrics {
@@ -13,13 +13,19 @@ class ConnectionMetrics {
     this.sessionStartTime = null;
     this.sessionEndTime = null;
     this.connectStartTime = null;
+
     this.connectionLatencyMs = 0;
     this.authDurationMs = 0;
     this.setupDurationMs = 0;
     
-    this.responseLatencies = [];
-    this.audioLatencies = [];
-    this.transcriptLatencies = [];
+    this.firstTranscriptTime = null;
+    this.timeToFirstTranscriptMs = 0;
+    
+    this.firstAudioTime = null;
+    this.timeToFirstAudioMs = 0;
+
+    this.turnStartTimestamp = null;
+    this.turnLatencies = [];
     
     this.reconnectCount = 0;
     this.bytesUploaded = 0;
@@ -57,17 +63,32 @@ class ConnectionMetrics {
     }
   }
 
-  recordResponseLatency(latencyMs) {
-    this.responseLatencies.push(latencyMs);
-    if (this.responseLatencies.length > 50) {
-      this.responseLatencies.shift();
+  recordFirstTranscript() {
+    if (this.connectStartTime && !this.firstTranscriptTime) {
+      this.firstTranscriptTime = Date.now();
+      this.timeToFirstTranscriptMs = Date.now() - this.connectStartTime;
     }
   }
 
-  recordAudioLatency(latencyMs) {
-    this.audioLatencies.push(latencyMs);
-    if (this.audioLatencies.length > 50) {
-      this.audioLatencies.shift();
+  recordFirstAudio() {
+    if (this.connectStartTime && !this.firstAudioTime) {
+      this.firstAudioTime = Date.now();
+      this.timeToFirstAudioMs = Date.now() - this.connectStartTime;
+    }
+  }
+
+  markTurnStart() {
+    this.turnStartTimestamp = Date.now();
+  }
+
+  markTurnComplete() {
+    if (this.turnStartTimestamp) {
+      const turnLatency = Date.now() - this.turnStartTimestamp;
+      this.turnLatencies.push(turnLatency);
+      if (this.turnLatencies.length > 50) {
+        this.turnLatencies.shift();
+      }
+      this.turnStartTimestamp = null;
     }
   }
 
@@ -88,10 +109,10 @@ class ConnectionMetrics {
     this.disconnectReason = reason;
   }
 
-  getAverageResponseLatency() {
-    if (this.responseLatencies.length === 0) return 0;
-    const sum = this.responseLatencies.reduce((a, b) => a + b, 0);
-    return Math.round(sum / this.responseLatencies.length);
+  getAverageTurnLatency() {
+    if (this.turnLatencies.length === 0) return 0;
+    const sum = this.turnLatencies.reduce((a, b) => a + b, 0);
+    return Math.round(sum / this.turnLatencies.length);
   }
 
   getSessionDurationSec() {
@@ -105,7 +126,9 @@ class ConnectionMetrics {
       connectionLatencyMs: this.connectionLatencyMs,
       authDurationMs: this.authDurationMs,
       setupDurationMs: this.setupDurationMs,
-      avgResponseLatencyMs: this.getAverageResponseLatency(),
+      timeToFirstTranscriptMs: this.timeToFirstTranscriptMs,
+      timeToFirstAudioMs: this.timeToFirstAudioMs,
+      avgTurnLatencyMs: this.getAverageTurnLatency(),
       sessionDurationSec: this.getSessionDurationSec(),
       reconnectCount: this.reconnectCount,
       bytesUploaded: this.bytesUploaded,

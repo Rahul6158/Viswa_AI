@@ -8,7 +8,7 @@ import { SettingsModal } from './components/SettingsModal';
 import { DiagnosticsPanel } from './components/DiagnosticsPanel';
 
 import { useGeminiLive } from './hooks/useGeminiLive';
-import { getSavedSettings, saveSettings, parseSpeechAndThought } from './utils/storage';
+import { getSavedSettings, saveSettings } from './utils/storage';
 
 import './styles/globals.css';
 import './styles/app.css';
@@ -58,8 +58,7 @@ export default function App() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [liveAgent]);
 
-  const rawCaption = liveAgent.liveCaptionText || liveAgent.transcripts[liveAgent.transcripts.length - 1]?.text;
-  const { spokenText, thoughtText } = parseSpeechAndThought(rawCaption);
+  const captionText = liveAgent.liveCaptionText || liveAgent.transcripts[liveAgent.transcripts.length - 1]?.text;
 
   return (
     <div className={`app-container ${settings.ambientMode ? 'ambient-mode' : ''}`}>
@@ -91,36 +90,26 @@ export default function App() {
           <span className={`status-dot ${liveAgent.agentState}`} />
           <span style={{ textTransform: 'capitalize' }}>
             {liveAgent.agentState === 'idle'
-              ? 'Tap Call to chat with Viswa'
+              ? 'Tap Call to chat with Vispo'
               : liveAgent.agentState === 'listening'
-              ? 'Viswa is listening...'
+              ? 'Vispo is listening...'
               : liveAgent.agentState === 'speaking'
-              ? 'Viswa is Speaking...'
+              ? 'Vispo is Speaking...'
               : liveAgent.agentState === 'reconnecting'
               ? 'Reconnecting session...'
               : liveAgent.agentState}
           </span>
         </div>
 
-        {/* Real-time Live Captions Overlay */}
-        {liveAgent.agentState !== 'idle' && (spokenText || thoughtText) && (
+        {/* Real-time Spoken Live Captions Overlay */}
+        {liveAgent.agentState !== 'idle' && captionText && (
           <div className="live-captions-overlay" aria-live="polite">
             <div className="caption-speaker">
-              {liveAgent.liveCaptionSpeaker === 'user' ? '🗣️ You' : '🤖 Viswa'}
+              {liveAgent.liveCaptionSpeaker === 'user' ? '🗣️ You' : '🤖 Vispo'}
             </div>
-
-            {spokenText && (
-              <div className="caption-text">
-                {spokenText}
-              </div>
-            )}
-
-            {thoughtText && (
-              <details className="caption-thought-dropdown">
-                <summary>💭 AI Reasoning Details</summary>
-                <p>{thoughtText}</p>
-              </details>
-            )}
+            <div className="caption-text">
+              {captionText}
+            </div>
           </div>
         )}
 
@@ -219,8 +208,8 @@ export default function App() {
         audioDevices={liveAgent.audioDevices}
       />
 
-      {/* Development Diagnostics Overlay Panel */}
-      <DiagnosticsPanel />
+      {/* Development Diagnostics Overlay Panel (Gated by Developer Mode) */}
+      {settings.developerMode && <DiagnosticsPanel />}
     </div>
   );
 }
